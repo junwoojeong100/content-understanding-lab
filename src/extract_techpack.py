@@ -60,6 +60,13 @@ EXCEL_COLUMNS = [
 ]
 
 _FORMULA_PREFIXES = ("=", "+", "-", "@")
+_INVALID_EXCEL_CHARACTERS = re.compile(r"[\x00-\x08\x0B-\x0C\x0E-\x1F\uD800-\uDFFF\uFFFE\uFFFF]")
+_PRICE_PREFIX = re.compile(
+    r"^\s*(?:(?P<code>[A-Za-z]{3})\s+)?"
+    r"(?P<symbol>[$€£¥₩₹₽])?\s*"
+    r"(?P<amount>[+-]?[\d.,]+)\s+"
+    r"(?P<unit>\S+)"
+)
 
 
 def _text(value: Any) -> str:
@@ -85,8 +92,10 @@ def _unique_colorways(value: Any) -> list[str]:
 def _excel_safe(value: Any) -> Any:
     """추출 문자열이 Excel 수식으로 실행되지 않도록 텍스트로 고정한다."""
 
-    if isinstance(value, str) and value.startswith(_FORMULA_PREFIXES):
-        return f"'{value}"
+    if isinstance(value, str):
+        value = _INVALID_EXCEL_CHARACTERS.sub("", value)
+        if value.startswith(_FORMULA_PREFIXES):
+            return f"'{value}"
     return value
 
 
@@ -207,9 +216,11 @@ def _norm_colorway(name: str) -> str:
 def _clean_price(price: str) -> str:
     """단가에서 통화+숫자+단위만 남기고 뒤의 SP24/LIST 등 태그 제거."""
     price = _text(price)
-    m = re.match(r"^\s*(\$?[\d.,]+)\s+(\S+)", price)
-    if m:
-        return f"{m.group(1)} {m.group(2)}"
+    match = _PRICE_PREFIX.match(price)
+    if match:
+        code = f"{match.group('code')} " if match.group("code") else ""
+        symbol = match.group("symbol") or ""
+        return f"{code}{symbol}{match.group('amount')} {match.group('unit')}"
     return price
 
 

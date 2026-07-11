@@ -35,25 +35,27 @@ from src.retry import call_with_propagation_retry
 
 
 class ConfigTests(unittest.TestCase):
-    def test_load_settings_validates_analyzer_ids(self) -> None:
-        env = {
-            "CONTENTUNDERSTANDING_ENDPOINT": "https://example.services.ai.azure.com/",
-            "WORK_ORDER_ANALYZER_ID": "invalid/id",
-            "TECHPACK_ANALYZER_ID": "techpack_bom",
-        }
-        with patch.dict(os.environ, env, clear=True), self.assertRaises(SystemExit):
-            load_settings()
+    def test_load_settings_rejects_disallowed_analyzer_id_characters(self) -> None:
+        for analyzer_id in ("invalid/id", "trade-work-order"):
+            env = {
+                "CONTENTUNDERSTANDING_ENDPOINT": "https://example.services.ai.azure.com/",
+                "WORK_ORDER_ANALYZER_ID": analyzer_id,
+                "TECHPACK_ANALYZER_ID": "techpack_bom",
+            }
+            with self.subTest(analyzer_id=analyzer_id):
+                with patch.dict(os.environ, env, clear=True), self.assertRaises(SystemExit):
+                    load_settings()
 
-    def test_load_settings_accepts_hyphenated_analyzer_ids(self) -> None:
+    def test_load_settings_accepts_periods_and_underscores_in_analyzer_ids(self) -> None:
         env = {
             "CONTENTUNDERSTANDING_ENDPOINT": "https://example.services.ai.azure.com/",
-            "WORK_ORDER_ANALYZER_ID": "trade-work-order",
-            "TECHPACK_ANALYZER_ID": "techpack-bom",
+            "WORK_ORDER_ANALYZER_ID": "trade.work_order",
+            "TECHPACK_ANALYZER_ID": "techpack_bom",
         }
         with patch.dict(os.environ, env, clear=True):
             settings = load_settings()
-        self.assertEqual(settings.analyzer_id, "trade-work-order")
-        self.assertEqual(settings.techpack_analyzer_id, "techpack-bom")
+        self.assertEqual(settings.analyzer_id, "trade.work_order")
+        self.assertEqual(settings.techpack_analyzer_id, "techpack_bom")
 
     def test_load_settings_uses_current_model_defaults(self) -> None:
         env = {
@@ -282,6 +284,9 @@ class TechPackProcessingTests(unittest.TestCase):
         self.assertEqual(_clean_description("4-WAY STRETCH FABRIC"), "4-WAY STRETCH FABRIC")
         self.assertEqual(_clean_description("210D RECYCLED NYLON", "210D"), "210D")
         self.assertEqual(_clean_price("$3.200 yd SP24"), "$3.200 yd")
+        self.assertEqual(_clean_price("€3.200 m LIST"), "€3.200 m")
+        self.assertEqual(_clean_price("USD 3.200 yd SP24"), "USD 3.200 yd")
+        self.assertEqual(_clean_price("£ 10.50 ea LIST"), "£10.50 ea")
 
     def test_output_path_preserves_dotted_base_name(self) -> None:
         base = Path("output/TechPack.v2")
@@ -477,6 +482,17 @@ class TechPackProcessingTests(unittest.TestCase):
             worksheet = workbook["추출 결과"]
             self.assertEqual(worksheet["A2"].data_type, "s")
             self.assertEqual(worksheet["A2"].value, "'=1+1")
+            self.assertEqual(worksheet["B2"].data_type, "s")
+            workbook.close()
+
+    def test_excel_values_remove_invalid_xml_characters(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "safe.xlsx"
+            write_excel([{"Style": "bad\x00text", "COLORWAY": "\x00=1+1"}], path)
+            workbook = load_workbook(path, data_only=False, read_only=True)
+            worksheet = workbook["추출 결과"]
+            self.assertEqual(worksheet["A2"].value, "badtext")
+            self.assertEqual(worksheet["B2"].value, "'=1+1")
             self.assertEqual(worksheet["B2"].data_type, "s")
             workbook.close()
 
