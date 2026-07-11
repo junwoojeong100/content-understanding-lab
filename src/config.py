@@ -15,7 +15,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-_ANALYZER_ID_PATTERN = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
+_ANALYZER_ID_PATTERN = re.compile(r"^[A-Za-z0-9._]{1,64}$")
 
 
 @dataclass(frozen=True)
@@ -61,7 +61,7 @@ def load_settings() -> Settings:
         if not _ANALYZER_ID_PATTERN.fullmatch(value):
             raise SystemExit(
                 f"{env_name} 값이 올바르지 않습니다: {value!r}\n"
-                "분석기 ID는 영문/숫자/마침표/언더스코어/하이픈만 사용해 1~64자로 지정하세요."
+                "분석기 ID는 영문/숫자/마침표/언더스코어만 사용해 1~64자로 지정하세요."
             )
     if analyzer_id == techpack_analyzer_id:
         raise SystemExit("WORK_ORDER_ANALYZER_ID 와 TECHPACK_ANALYZER_ID 는 서로 다른 값이어야 합니다.")

@@ -66,9 +66,9 @@ TEXT_EMBEDDING_3_LARGE_DEPLOYMENT="${TEXT_EMBEDDING_3_LARGE_DEPLOYMENT:-text-emb
 CONTENT_UNDERSTANDING_ROLE="Cognitive Services Content Understanding Owner"
 
 for analyzer_id in "$WORK_ORDER_ANALYZER_ID" "$TECHPACK_ANALYZER_ID"; do
-  if ! [[ "$analyzer_id" =~ ^[A-Za-z0-9._-]{1,64}$ ]]; then
+  if ! [[ "$analyzer_id" =~ ^[A-Za-z0-9._]{1,64}$ ]]; then
     echo "[오류] 분석기 ID 형식이 올바르지 않습니다: '$analyzer_id'" >&2
-    echo "       영문/숫자/마침표/언더스코어/하이픈만 사용해 1~64자로 지정하세요." >&2
+    echo "       영문/숫자/마침표/언더스코어만 사용해 1~64자로 지정하세요." >&2
     exit 1
   fi
 done
