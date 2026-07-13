@@ -297,6 +297,125 @@ python -m src.extract_techpack /경로/TechPack.pdf
 └── README.md
 ```
 
+## 사용자 샘플과 피드백으로 결과 앱 완성하기
+
+사용자가 **원본 작업지시서/PDF**와 **원하는 최종 Excel**을 제공하면, 최종 Excel은 학습 파일이 아니라
+앱이 맞춰야 할 **골든 출력(golden output)** 으로 사용합니다. 사용자의 반복 피드백은 다음 두 위치 중
+알맞은 곳에 코드로 반영하고, 같은 문제가 다시 생기지 않도록 회귀 테스트로 고정합니다.
+
+```text
+원본 문서
+   │
+   ▼
+Content Understanding 분석기 ── schema.py / techpack_schema.py
+   │                           "무엇을 추출할지"
+   ▼
+RAW JSON → 정제 JSON
+              │
+              ▼
+고객별 결정적 변환 로직 ─────── unpivot_rows(), _clean_*() 등
+              │                 "어떻게 행·열·값을 구성할지"
+              ▼
+목표 Excel ── 사용자 피드백 → 규칙 수정 → 회귀 테스트 → 재실행
+```
+
+> Content Understanding 공식 가이드도 샘플 업로드 → 스키마 정의 → 분석 테스트 → 스키마 반복 개선을
+> 권장합니다. 이 프로젝트는 그 과정에 **고객별 출력 변환**과 **로컬 회귀 테스트**를 추가합니다.
+> [공식 custom analyzer 개선 가이드](https://learn.microsoft.com/azure/ai-services/content-understanding/how-to/customize-analyzer-content-understanding-studio)
+
+### 1) 먼저 입력·정답·판정 규칙을 확보
+
+최소한 다음 자료를 한 세트로 준비합니다.
+
+- 대표 원본 문서 여러 개: 정상 양식뿐 아니라 페이지 수, 표 구조, 빈 값이 다른 사례도 포함
+- 각 원본에 대응하는 목표 Excel: 시트명, 컬럼명/순서, 행 단위, 셀 값이 확정된 파일
+- 업무 규칙: 값 분리/결합, 빈 값, 기본값, 단위, 반올림, 중복 처리, 컬러웨이 전개 방식
+- 피드백의 적용 범위: 특정 문서만의 예외인지 앞으로 모든 문서에 적용할 일반 규칙인지
+
+실제 고객 문서와 Excel에는 민감정보가 있을 수 있으므로 저장소에는 원본을 커밋하지 말고,
+테스트에는 문제를 재현하는 최소한의 익명화된 JSON과 기대값만 남깁니다.
+
+### 2) 기준 결과를 만들고 모든 단계의 결과를 함께 비교
+
+```bash
+# 작업지시서: 정제 JSON에서도 confidence를 함께 확인
+python -m src.extract_work_order /경로/작업지시서.pdf --with-confidence
+
+# TechPack: RAW JSON, 정제 JSON, 현재 Excel을 한 번에 생성
+python -m src.extract_techpack /경로/TechPack.pdf --out output/baseline
+```
+
+원본 문서, `*.raw.json`, 정제된 `*.json`, 목표 `*.xlsx`를 나란히 비교합니다. Excel만 보고 바로
+후처리 코드를 고치면 추출 문제와 변환 문제를 혼동하기 쉬우므로, 먼저 값이 어느 단계까지 올바른지 확인합니다.
+
+### 3) 피드백을 수정 계층별로 분류
+
+| 비교 결과 | 수정 위치 | 분석기 재생성 |
+| --- | --- | --- |
+| 문서에는 값이 있지만 RAW/정제 JSON의 `fields`가 누락되거나 잘못됨 | `src/schema.py` 또는 `src/techpack_schema.py`의 필드 타입·구조·`description` | 필요 |
+| RAW `fields`는 맞지만 정제 JSON 값이 잘못됨 | `src/extract_work_order.py`의 평탄화 또는 공통 정규화 로직 | 불필요 |
+| 정제 JSON은 맞지만 Excel의 행 수, 컬럼, 값 분리/결합이 다름 | `unpivot_rows()` 같은 고객별 결정적 변환 함수 | 불필요 |
+| 셀 값은 맞지만 시트명, 헤더, 너비, 표시 형식이 다름 | `write_excel()` 같은 Excel 작성 함수 | 불필요 |
+| 값의 출처나 누락 원인을 알 수 없음 | `*.raw.json`의 `markdown`, `tables`, `source`, `confidence`부터 확인 | 진단 후 결정 |
+
+스키마는 문서의 **업무 의미를 가진 필드**를 안정적으로 추출하는 데 집중하고, 고객 Excel의 컬럼 순서나
+행 복제 같은 표현 규칙은 Python 후처리에서 구현합니다. 모든 출력 규칙을 분석기 프롬프트에 넣는 것보다
+이 방식이 결정적이고 테스트하기 쉽습니다.
+
+### 4) 사용자 피드백 한 건을 규칙 한 개와 테스트 한 개로 변환
+
+피드백을 “결과가 이상함”으로 기록하지 말고 다음처럼 검증 가능한 규칙으로 바꿉니다.
+
+| 사용자 피드백 | 코드 규칙의 예 | 회귀 테스트의 예 |
+| --- | --- | --- |
+| “모든 소재가 각 컬러웨이별 한 행이어야 함” | `unpivot_rows()`에서 소재 × 컬러웨이 행 생성 | 소재 2개 × 컬러웨이 2개 = 4행 |
+| “빈 COMPONENT는 위 회색 그룹명을 따라야 함” | `_resolve_components()`에서 직전 그룹명 승계 | 헤더 전용 행 다음 소재의 COMPONENT 확인 |
+| “가격에서 SP24/LIST는 빼야 함” | `_clean_price()`에서 통화·금액·단위만 보존 | `$3.200 yd SP24` → `$3.200 yd` |
+| “Excel 컬럼 순서는 항상 동일해야 함” | `EXCEL_COLUMNS`를 단일 기준으로 사용 | 생성된 첫 행 헤더 전체 비교 |
+| “납기일이 다른 이름으로 적힌 문서에서 누락됨” | 스키마 `description`에 실제 별칭 추가 | 분석기 재생성 후 해당 샘플 재분석 |
+
+피드백 기록에는 가능하면 `입력 문서/페이지`, `현재 값`, `기대값`, `일반 규칙`, `예외`,
+`수정 계층`, `추가한 테스트`를 남깁니다. 이렇게 해야 다음 피드백이 이전 수정과 충돌하는지 판단할 수 있습니다.
+
+### 5) 한 계층씩 수정하고 같은 샘플로 반복
+
+1. 추출 문제일 때만 스키마를 수정합니다.
+2. 스키마를 바꿨다면 분석기를 재생성하고 같은 문서를 다시 분석합니다.
+3. 정제 JSON이 맞아진 뒤 고객별 변환과 Excel 표시를 수정합니다.
+4. 피드백을 재현하는 최소 회귀 테스트를 `tests/test_processing.py`에 추가합니다.
+5. 전체 회귀 테스트와 목표 Excel 비교를 통과한 결과를 사용자에게 다시 확인받습니다.
+6. 새 피드백을 다음 판정 규칙으로 추가하고 같은 순서를 반복합니다.
+
+```bash
+# 작업지시서 스키마를 바꾼 경우
+python -m src.create_analyzer --recreate
+python -m src.extract_work_order /경로/작업지시서.pdf
+
+# TechPack 스키마를 바꾼 경우
+python -m src.extract_techpack /경로/TechPack.pdf --recreate-analyzer
+
+# Python 후처리만 바꾼 경우 분석기 재생성 없이 테스트
+python -m unittest discover -s tests -v
+```
+
+`--recreate-analyzer`는 스키마나 분석기 모델을 변경했을 때만 필요합니다. 행/열 변환, 값 정리,
+Excel 서식 같은 로컬 Python 코드만 수정했다면 분석기를 재생성하지 말고 익명화된 JSON 테스트 데이터로
+빠르게 반복한 뒤, 최종 확인 시 원본 문서를 다시 분석합니다.
+
+### 6) 새 고객 Excel 형식 추가 방향
+
+현재 `extract_techpack.py`가 이 패턴의 예입니다. 다른 작업지시서용 Excel을 추가할 때도 다음처럼 계층을
+분리합니다.
+
+1. `schema.py`에는 여러 고객 양식에서 재사용할 수 있는 업무 필드를 정의합니다.
+2. 정제 JSON을 받아 목표 행을 반환하는 순수 함수(예: `build_customer_rows(fields)`)를 만듭니다.
+3. 행 데이터와 Excel 서식을 분리해 `write_customer_excel(rows, path)`에서 파일을 생성합니다.
+4. 익명화된 입력 필드와 기대 행/헤더를 `tests/test_processing.py`에 추가합니다.
+
+특정 샘플의 문자열이나 행 번호를 하드코딩하지 말고, 사용자에게 확인받은 일반 규칙을 구현해야 다른 문서에도
+동일하게 적용됩니다. 대표 샘플 전체에서 필드 값, 행 수, 컬럼 순서, 핵심 셀, 빈 값/예외가 목표 Excel과
+일치하고 모든 피드백이 테스트로 남았을 때 해당 고객용 앱이 완성된 것으로 판단합니다.
+
 ## 스키마 커스터마이징
 
 작업지시서 양식에 맞춰 `src/schema.py` 의 `build_work_order_schema()` 에서 필드를 추가/수정한 뒤
