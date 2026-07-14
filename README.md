@@ -1,7 +1,8 @@
-# Azure Content Understanding 실습: 작업지시서 JSON + TechPack BOM Excel
+# Azure AI Content Understanding 실습: 작업지시서 JSON + TechPack BOM Excel
 
-Microsoft Foundry의 **Azure Content Understanding in Foundry Tools**(이하 Content Understanding)로
-다음 두 문서 자동화 흐름을 실습하는 Python 프로젝트입니다.
+**Azure AI Content Understanding**(현재 Microsoft Learn 표기:
+**Azure Content Understanding in Foundry Tools**, 이하 Content Understanding)으로 다음 두 문서
+자동화 흐름을 실습하는 Python 프로젝트입니다.
 
 - **작업지시서(Work Order)** PDF → 구조화 JSON + 서비스 원본 JSON
 - **의류 TechPack BOM** PDF → 구조화 JSON + 고객 양식 Excel(12개 컬럼)
@@ -26,7 +27,7 @@ Microsoft Foundry의 **Azure Content Understanding in Foundry Tools**(이하 Con
       │
       ▼
  [커스텀 분석기]  ← ① src/schema.py 필드 스키마 (서비스가 fields 생성)
-      │            Azure Content Understanding in Foundry Tools
+      │            Azure AI Content Understanding (Microsoft Foundry)
       ▼
  서비스 RAW 응답 ─────────────────────────▶ output/작업지시서.raw.json (원본 전체 보존)
       │
